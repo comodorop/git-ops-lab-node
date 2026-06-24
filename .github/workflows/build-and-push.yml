@@ -36,3 +36,36 @@ jobs:
 
       - name: Push image
         run: docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  update-manifest:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: GITLAB
+
+    env:
+      ECR_REGISTRY: 221161988433.dkr.ecr.us-east-1.amazonaws.com
+      ECR_REPOSITORY: lab-gitops
+
+    steps:
+      - name: Checkout node-k8s
+        uses: actions/checkout@v4
+        with:
+          repository: comodorop/git-ops-lab-node-k8s
+          token: ${{ secrets.GITOPS_PAT }}
+
+      - name: Set short SHA
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Bump image tag in deployment.yaml
+        run: |
+          sed -E -i "s#(image: ${ECR_REGISTRY}/${ECR_REPOSITORY}):.*#\1:${IMAGE_TAG}#" deployment.yaml
+          cat deployment.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployment.yaml
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "ci: bump node-api image to ${IMAGE_TAG}"
+          git push
